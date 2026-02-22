@@ -10,25 +10,21 @@ function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // NEW: selected month (YYYY-MM)
+  // Selected month (YYYY-MM)
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
 
-  // UPDATED: fetch by month
+  // FIXED: fetch using expense_month (not expense_date)
   const fetchExpenses = async () => {
 
     setLoading(true);
 
-    const startDate = `${selectedMonth}-01`;
-    const endDate = `${selectedMonth}-31`;
-
     const { data, error } = await supabase
       .from('expenses')
       .select('*')
-      .gte('expense_date', startDate)
-      .lte('expense_date', endDate)
-      .order('expense_date', { ascending: false });
+      .eq('expense_month', selectedMonth)
+      .order('created_at', { ascending: false });
 
     if (error) {
 
@@ -44,7 +40,7 @@ function App() {
 
   };
 
-  // IMPORTANT: refetch when month changes
+  // Refetch when month changes
   useEffect(() => {
 
     fetchExpenses();
@@ -72,7 +68,7 @@ function App() {
 
 
 
-        {/* NEW: Month selector */}
+        {/* Month selector */}
         <div className="bg-white rounded-lg shadow-md p-4 mb-6 flex items-center justify-between">
 
           <label className="font-medium text-gray-700">
@@ -107,7 +103,11 @@ function App() {
 
           <>
 
-            <ExpenseSummary expenses={expenses} />
+            {/* FIXED: pass selectedMonth */}
+            <ExpenseSummary
+              expenses={expenses}
+              selectedMonth={selectedMonth}
+            />
 
             <ExpenseForm
               onExpenseAdded={fetchExpenses}
