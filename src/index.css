@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fix dropdown and input dark background globally */
+@layer base {
+  input,
+  select,
+  textarea {
+    @apply bg-white text-gray-900 border-gray-300;
+  }
+
+  select option {
+    @apply bg-white text-gray-900;
+  }
+}
