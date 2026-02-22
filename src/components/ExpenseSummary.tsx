@@ -3,16 +3,23 @@ import { Expense } from '../lib/supabase';
 
 interface ExpenseSummaryProps {
   expenses: Expense[];
+  selectedMonth: string; // NEW (YYYY-MM)
 }
 
-export function ExpenseSummary({ expenses }: ExpenseSummaryProps) {
+export function ExpenseSummary({ expenses, selectedMonth }: ExpenseSummaryProps) {
+
+  // NEW: filter expenses by selected month
+  const monthlyExpenses = expenses.filter((expense) =>
+    expense.expense_month === selectedMonth
+  );
+
   const calculateBalance = () => {
     let person1Paid = 0;
     let person2Paid = 0;
     let person1Owes = 0;
     let person2Owes = 0;
 
-    expenses.forEach((expense) => {
+    monthlyExpenses.forEach((expense) => {
       const amount = Number(expense.amount);
 
       if (expense.paid_by === 'person1') {
@@ -42,6 +49,15 @@ export function ExpenseSummary({ expenses }: ExpenseSummaryProps) {
 
   const balance = calculateBalance();
 
+  if (monthlyExpenses.length === 0) {
+    return (
+      <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
+        <h2 className="text-lg font-semibold">Summary</h2>
+        <p className="opacity-90 mt-2">No expenses this month</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
       <h2 className="text-lg font-semibold mb-4">Summary</h2>
@@ -49,17 +65,24 @@ export function ExpenseSummary({ expenses }: ExpenseSummaryProps) {
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
           <p className="text-xs opacity-90 mb-1">Rikhi Paid</p>
-          <p className="text-2xl font-bold">¥{balance.person1Paid.toLocaleString()}</p>
+          <p className="text-2xl font-bold">
+            ¥{balance.person1Paid.toLocaleString()}
+          </p>
         </div>
+
         <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
           <p className="text-xs opacity-90 mb-1">Saki Paid</p>
-          <p className="text-2xl font-bold">¥{balance.person2Paid.toLocaleString()}</p>
+          <p className="text-2xl font-bold">
+            ¥{balance.person2Paid.toLocaleString()}
+          </p>
         </div>
       </div>
 
       <div className="bg-white/15 backdrop-blur-sm rounded-lg p-4 mb-4">
-        <p className="text-xs opacity-90 mb-1">Total Spent Together</p>
-        <p className="text-3xl font-bold">¥{balance.totalSpent.toLocaleString()}</p>
+        <p className="text-xs opacity-90 mb-1">Total Spent This Month</p>
+        <p className="text-3xl font-bold">
+          ¥{balance.totalSpent.toLocaleString()}
+        </p>
       </div>
 
       {balance.owedAmount > 0 && (
@@ -68,21 +91,27 @@ export function ExpenseSummary({ expenses }: ExpenseSummaryProps) {
             <span className="font-medium">
               {balance.owedBy === 'person2' ? 'Saki' : 'Rikhi'}
             </span>
+
             <ArrowRight size={20} className="text-gray-400" />
+
             <span className="font-medium">
               {balance.owedBy === 'person2' ? 'Rikhi' : 'Saki'}
             </span>
           </div>
+
           <p className="text-2xl font-bold text-center mt-2 text-blue-600">
             ¥{balance.owedAmount.toLocaleString()}
           </p>
+
           <p className="text-xs text-center text-gray-600 mt-1">
-            {balance.owedBy === 'person2' ? 'Saki owes Rikhi' : 'Rikhi owe Saki'}
+            {balance.owedBy === 'person2'
+              ? 'Saki owes Rikhi'
+              : 'Rikhi owes Saki'}
           </p>
         </div>
       )}
 
-      {balance.owedAmount === 0 && expenses.length > 0 && (
+      {balance.owedAmount === 0 && (
         <div className="bg-white rounded-lg p-4 text-center">
           <p className="text-gray-800 font-medium">All settled up!</p>
         </div>
