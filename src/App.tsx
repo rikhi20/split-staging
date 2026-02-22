@@ -10,28 +10,6 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   const fetchExpenses = async () => {
-
-  setLoading(true);
-
-  const startDate = `${selectedMonth}-01`;
-  const endDate = `${selectedMonth}-31`;
-
-  const { data, error } = await supabase
-    .from('expenses')
-    .select('*')
-    .gte('expense_date', startDate)
-    .lte('expense_date', endDate)
-    .order('expense_date', { ascending: false });
-
-  if (error) {
-    console.error('Error fetching expenses:', error);
-  } else {
-    setExpenses(data || []);
-  }
-
-  setLoading(false);
-};
-=======
     setLoading(true);
     const { data, error } = await supabase
       .from('expenses')
@@ -45,6 +23,7 @@ function App() {
     }
     setLoading(false);
   };
+
   useEffect(() => {
     fetchExpenses();
   }, []);
