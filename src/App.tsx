@@ -10,7 +10,6 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   const fetchExpenses = async () => {
-<<<<<<< HEAD
 
   setLoading(true);
 
@@ -46,8 +45,6 @@ function App() {
     }
     setLoading(false);
   };
->>>>>>> 8a3ee77 (Reverted to v1)
-
   useEffect(() => {
     fetchExpenses();
   }, []);
