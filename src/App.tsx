@@ -1,155 +1,237 @@
-import { useEffect, useState } from 'react';
-import { Wallet } from 'lucide-react';
-import { ExpenseForm } from './components/ExpenseForm';
-import { ExpenseList } from './components/ExpenseList';
-import { ExpenseSummary } from './components/ExpenseSummary';
-import { SettlementHistory } from './components/SettlementHistory';
-import { supabase, Expense, Settlement } from './lib/supabase';
+import { useEffect, useState } from "react";
+import { supabase } from "./lib/supabase";
+import { ExpenseForm } from "./components/ExpenseForm";
+import { ExpenseList } from "./components/ExpenseList";
+import { ExpenseSummary } from "./components/ExpenseSummary";
+import { Wallet } from "lucide-react";
 
-function App() {
+type Expense = {
+  id: string;
+  description: string;
+  amount: number;
+  paid_by: string;
+  created_at: string;
+};
+
+type Balance = {
+  user_id: string;
+  balance: number;
+};
+
+export default function App() {
+  const [groupId, setGroupId] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [selectedMonth, setSelectedMonth] = useState(
-    new Date().toISOString().slice(0, 7)
-  );
-
-  // ============================================
-  // FETCH DATA
-  // ============================================
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-
-      const startDate = `${selectedMonth}-01`;
-
-      const [year, month] = selectedMonth.split('-');
-
-      const nextMonth =
-        month === '12'
-          ? '01'
-          : String(Number(month) + 1).padStart(2, '0');
-
-      const nextYear =
-        month === '12'
-          ? String(Number(year) + 1)
-          : year;
-
-      const endDate = `${nextYear}-${nextMonth}-01`;
-
-      // Fetch expenses
-      const {
-        data: expData,
-        error: expError,
-      } = await supabase
-        .from('expenses')
-        .select('*')
-        .gte('expense_date', startDate)
-        .lt('expense_date', endDate)
-        .order('expense_date', { ascending: false });
-
-      if (expError) {
-        console.error('Error fetching expenses:', expError);
-      }
-
-      // Fetch settlements
-      const {
-        data: settleData,
-        error: settleError,
-      } = await supabase
-        .from('settlements')
-        .select('*')
-        .gte('settlement_date', startDate)
-        .lt('settlement_date', endDate)
-        .order('settlement_date', { ascending: false });
-
-      if (settleError) {
-        console.error('Error fetching settlements:', settleError);
-      }
-
-      setExpenses(expData || []);
-      setSettlements(settleData || []);
-
-    } catch (err) {
-      console.error('Unexpected fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================
-  // AUTO FETCH ON MONTH CHANGE
-  // ============================================
+  //--------------------------------------------------
+  // INIT
+  //--------------------------------------------------
 
   useEffect(() => {
-    fetchData();
-  }, [selectedMonth]);
+    init();
+  }, []);
 
-  // ============================================
-  // UI
-  // ============================================
+  async function init() {
+    setLoading(true);
+
+    const gid = await getOrCreateGroup();
+    setGroupId(gid);
+
+    await loadExpenses(gid);
+    await loadBalances(gid);
+
+    setLoading(false);
+  }
+
+  //--------------------------------------------------
+  // GET OR CREATE GROUP
+  //--------------------------------------------------
+
+  async function getOrCreateGroup(): Promise<string> {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData.user;
+
+    if (!user) throw new Error("Not logged in");
+
+    // check existing membership
+    const { data: membership } = await supabase
+      .from("group_members")
+      .select("group_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (membership?.group_id) {
+      return membership.group_id;
+    }
+
+    // create new group
+    const { data: newGroup } = await supabase
+      .from("groups")
+      .insert({ name: "Shared Group" })
+      .select()
+      .single();
+
+    if (!newGroup) throw new Error("Failed creating group");
+
+    // add member
+    await supabase.from("group_members").insert({
+      group_id: newGroup.id,
+      user_id: user.id,
+    });
+
+    return newGroup.id;
+  }
+
+  //--------------------------------------------------
+  // LOAD EXPENSES
+  //--------------------------------------------------
+
+  async function loadExpenses(gid: string) {
+    const { data } = await supabase
+      .from("expenses")
+      .select("*")
+      .eq("group_id", gid)
+      .order("created_at", { ascending: false });
+
+    setExpenses(data || []);
+  }
+
+  //--------------------------------------------------
+  // LOAD BALANCES
+  //--------------------------------------------------
+
+  async function loadBalances(gid: string) {
+    const { data } = await supabase
+      .from("group_balances")
+      .select("*")
+      .eq("group_id", gid);
+
+    setBalances(data || []);
+  }
+
+  //--------------------------------------------------
+  // REFRESH ALL
+  //--------------------------------------------------
+
+  async function refresh() {
+    if (!groupId) return;
+
+    await loadExpenses(groupId);
+    await loadBalances(groupId);
+  }
+
+  //--------------------------------------------------
+  // SETTLE UP CALCULATION
+  //--------------------------------------------------
+
+  function calculateSettlements() {
+    const creditors = balances
+      .filter(b => b.balance > 0)
+      .map(b => ({ ...b }));
+
+    const debtors = balances
+      .filter(b => b.balance < 0)
+      .map(b => ({ ...b }));
+
+    const settlements: {
+      from: string;
+      to: string;
+      amount: number;
+    }[] = [];
+
+    let i = 0;
+    let j = 0;
+
+    while (i < debtors.length && j < creditors.length) {
+      const debt = Math.abs(debtors[i].balance);
+      const credit = creditors[j].balance;
+
+      const amount = Math.min(debt, credit);
+
+      settlements.push({
+        from: debtors[i].user_id,
+        to: creditors[j].user_id,
+        amount,
+      });
+
+      debtors[i].balance += amount;
+      creditors[j].balance -= amount;
+
+      if (Math.abs(debtors[i].balance) < 0.01) i++;
+      if (Math.abs(creditors[j].balance) < 0.01) j++;
+    }
+
+    return settlements;
+  }
+
+  //--------------------------------------------------
+  // RENDER
+  //--------------------------------------------------
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Loading...
+      </div>
+    );
+  }
+
+  const settlements = calculateSettlements();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="max-w-2xl mx-auto px-4 py-6 sm:py-8">
+    <div className="min-h-screen bg-gray-50">
 
-        {/* Header */}
-        <div className="flex items-center justify-center gap-3 mb-8">
-          <Wallet className="text-blue-500" size={32} />
-          <h1 className="text-3xl font-bold text-gray-800">
-            Expense Tracker
+      {/* HEADER */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-2">
+          <Wallet className="w-6 h-6" />
+          <h1 className="text-xl font-semibold">
+            Shared Expense Tracker
           </h1>
         </div>
+      </div>
 
-        {/* Month selector */}
-        <div className="mb-6">
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* CONTENT */}
+      <div className="max-w-3xl mx-auto p-4 space-y-4">
+
+        {/* SUMMARY */}
+        <ExpenseSummary expenses={expenses} balances={balances} />
+
+        {/* FORM */}
+        <ExpenseForm
+          groupId={groupId!}
+          onExpenseAdded={refresh}
+        />
+
+        {/* LIST */}
+        <ExpenseList
+          expenses={expenses}
+          onExpenseDeleted={refresh}
+        />
+
+        {/* SETTLE UP */}
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold mb-2">
+            Settle Up
+          </h2>
+
+          {settlements.length === 0 && (
+            <p className="text-gray-500">
+              All settled up 🎉
+            </p>
+          )}
+
+          {settlements.map((s, i) => (
+            <div key={i} className="text-sm">
+              {s.from.slice(0,6)} pays {s.to.slice(0,6)} ¥
+              {s.amount.toFixed(0)}
+            </div>
+          ))}
         </div>
-
-        {/* Loading */}
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            <p className="mt-4 text-gray-600">Loading...</p>
-          </div>
-        ) : (
-          <>
-            {/* Summary */}
-            <ExpenseSummary
-              expenses={expenses}
-              settlements={settlements}
-              onSettled={fetchData}
-            />
-
-            {/* Add expense */}
-            <ExpenseForm
-              onExpenseAdded={fetchData}
-            />
-
-            {/* Expense list */}
-            <ExpenseList
-              expenses={expenses}
-              onExpenseDeleted={fetchData}
-            />
-
-            {/* Settlement history */}
-            <SettlementHistory
-              settlements={settlements}
-              onSettlementDeleted={fetchData}
-            />
-          </>
-        )}
 
       </div>
     </div>
   );
 }
-
-export default App;
