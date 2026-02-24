@@ -14,7 +14,7 @@ import {
 
 
 // ✅ CHANGE THIS to your real group_id from Supabase
-const GROUP_ID = 'YOUR_GROUP_ID_HERE';
+const GROUP_ID = 'ad49abdf-fe1c-49f0-b0a4-5f4e8456a83f';
 
 
 function App() {
