@@ -31,28 +31,25 @@ export interface Settlement {
 // ADD EXPENSE
 
 export async function addExpense(
+  groupId: string,
   expense_type: string,
   amount: number,
-  paid_by: Person,
-  description?: string
+  paid_by: Person
 ) {
 
   const { data, error } = await supabase
     .from('expenses')
     .insert({
+      group_id: groupId,
       expense_type,
       amount,
       paid_by,
-      description: description ?? null,
-      expense_date: new Date().toISOString().slice(0, 10),
+      expense_date: new Date().toISOString().slice(0, 10)
     })
     .select()
     .single();
 
-  if (error) {
-    console.error(error);
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }
@@ -88,17 +85,18 @@ export async function recordSettlement(
 // FETCH FUNCTIONS
 // ============================================
 
-export async function getExpenses(startDate: string, endDate: string) {
+export async function getExpenses(groupId: string) {
 
   const { data, error } = await supabase
     .from('expenses')
     .select('*')
-    .gte('expense_date', startDate)
-    .lt('expense_date', endDate)
+    .eq('group_id', groupId)
     .order('expense_date', { ascending: false });
 
   if (error) {
+
     console.error('getExpenses error:', error);
+
     throw error;
   }
 
@@ -106,17 +104,18 @@ export async function getExpenses(startDate: string, endDate: string) {
 }
 
 
-export async function getSettlements(startDate: string, endDate: string) {
+export async function getSettlements(groupId: string) {
 
   const { data, error } = await supabase
     .from('settlements')
     .select('*')
-    .gte('settlement_date', startDate)
-    .lt('settlement_date', endDate)
+    .eq('group_id', groupId)
     .order('settlement_date', { ascending: false });
 
   if (error) {
+
     console.error('getSettlements error:', error);
+
     throw error;
   }
 
@@ -152,26 +151,23 @@ export async function deleteExpense(id: string) {
 export async function settleUp(
   groupId: string,
   amount: number,
-  paid_by: string,
-  paid_to: string
+  paid_by: Person,
+  paid_to: Person
 ) {
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('settlements')
-    .insert([
-      {
-        group_id: groupId,
-        amount,
-        paid_by,
-        paid_to,
-        settlement_date: new Date().toISOString().slice(0, 10),
-      },
-    ]);
+    .insert({
+      group_id: groupId,
+      amount,
+      paid_by,
+      paid_to,
+      settlement_date: new Date().toISOString().slice(0, 10)
+    })
+    .select()
+    .single();
 
-  if (error) {
-    console.error('settleUp error:', error);
-    return false;
-  }
+  if (error) throw error;
 
-  return true;
+  return data;
 }
