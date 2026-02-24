@@ -1,158 +1,158 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+
+interface Expense {
+  id: string;
+  amount: number;
+  description: string | null;
+  paid_by: string;
+  created_at: string;
+}
 
 interface Props {
   groupId: string;
-  onExpenseAdded: () => void;
+  refreshKey: number;
 }
 
-export function ExpenseForm({ groupId, onExpenseAdded }: Props) {
+export function ExpenseList({ groupId, refreshKey }: Props) {
 
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [splitEqual, setSplitEqual] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
 
   //--------------------------------------------------
-  // SUBMIT
+  // FETCH EXPENSES
   //--------------------------------------------------
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    fetchExpenses();
+  }, [groupId, refreshKey]);
 
-    if (!amount || !groupId) return;
+  async function fetchExpenses() {
 
     setLoading(true);
 
-    try {
-      //--------------------------------------------------
-      // GET CURRENT USER
-      //--------------------------------------------------
+    const { data, error } = await supabase
+      .from("expenses")
+      .select(`
+        id,
+        amount,
+        description,
+        paid_by,
+        created_at
+      `)
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: false });
 
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData.user;
-
-      if (!user) throw new Error("Not logged in");
-
-      //--------------------------------------------------
-      // CREATE EXPENSE
-      //--------------------------------------------------
-
-      const { data: expense, error } = await supabase
-        .from("expenses")
-        .insert({
-          group_id: groupId,
-          paid_by: user.id,
-          amount: Number(amount),
-          description: description || null,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      //--------------------------------------------------
-      // GET GROUP MEMBERS
-      //--------------------------------------------------
-
-      const { data: members } = await supabase
-        .from("group_members")
-        .select("user_id")
-        .eq("group_id", groupId);
-
-      if (!members || members.length === 0)
-        throw new Error("No group members");
-
-      //--------------------------------------------------
-      // CREATE SPLITS
-      //--------------------------------------------------
-
-      if (splitEqual) {
-
-        const splitAmount = Number(amount) / members.length;
-
-        const splits = members.map(member => ({
-          expense_id: expense.id,
-          user_id: member.user_id,
-          amount: splitAmount,
-        }));
-
-        const { error: splitError } = await supabase
-          .from("expense_splits")
-          .insert(splits);
-
-        if (splitError) throw splitError;
-      }
-
-      //--------------------------------------------------
-      // RESET
-      //--------------------------------------------------
-
-      setAmount("");
-      setDescription("");
-
-      onExpenseAdded();
-
-    } catch (err) {
-      console.error(err);
-      alert("Failed to add expense");
+    if (error) {
+      console.error(error);
+      alert("Failed to load expenses");
+    } else {
+      setExpenses(data || []);
     }
 
     setLoading(false);
   }
 
   //--------------------------------------------------
+  // DELETE
+  //--------------------------------------------------
+
+  async function deleteExpense(id: string) {
+
+    if (!confirm("Delete this expense?")) return;
+
+    const { error } = await supabase
+      .from("expenses")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error(error);
+      alert("Delete failed");
+      return;
+    }
+
+    fetchExpenses();
+  }
+
+  //--------------------------------------------------
+  // FORMAT DATE
+  //--------------------------------------------------
+
+  function formatDate(dateString: string) {
+
+    const d = new Date(dateString);
+
+    return d.toLocaleDateString("en-JP", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  //--------------------------------------------------
   // UI
   //--------------------------------------------------
+
+  if (loading)
+    return (
+      <div className="bg-white p-4 rounded-xl shadow">
+        Loading expenses...
+      </div>
+    );
 
   return (
     <div className="bg-white p-4 rounded-xl shadow">
 
       <h2 className="font-semibold mb-3">
-        Add Expense
+        Expenses
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      {expenses.length === 0 && (
+        <div className="text-gray-500 text-sm">
+          No expenses yet
+        </div>
+      )}
 
-        {/* amount */}
-        <input
-          type="number"
-          placeholder="Amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          required
-          className="w-full border rounded-lg px-3 py-2"
-        />
+      <div className="space-y-3">
 
-        {/* description */}
-        <input
-          type="text"
-          placeholder="Description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="w-full border rounded-lg px-3 py-2"
-        />
+        {expenses.map(exp => (
 
-        {/* split toggle */}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={splitEqual}
-            onChange={(e) => setSplitEqual(e.target.checked)}
-          />
-          Split equally
-        </label>
+          <div
+            key={exp.id}
+            className="flex justify-between items-center border-b pb-2"
+          >
 
-        {/* button */}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600"
-        >
-          {loading ? "Adding..." : "Add Expense"}
-        </button>
+            <div>
 
-      </form>
+              <div className="font-medium">
+                ¥{exp.amount.toLocaleString()}
+              </div>
+
+              {exp.description && (
+                <div className="text-sm text-gray-600">
+                  {exp.description}
+                </div>
+              )}
+
+              <div className="text-xs text-gray-400">
+                {formatDate(exp.created_at)}
+              </div>
+
+            </div>
+
+            <button
+              onClick={() => deleteExpense(exp.id)}
+              className="text-red-500 text-sm hover:text-red-700"
+            >
+              Delete
+            </button>
+
+          </div>
+
+        ))}
+
+      </div>
 
     </div>
   );
