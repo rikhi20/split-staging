@@ -122,3 +122,25 @@ export async function getSettlements(startDate: string, endDate: string) {
 
   return data as Settlement[];
 }
+
+// ============================================
+// DELETE EXPENSE
+// ============================================
+
+export async function deleteExpense(id: string) {
+
+  const { error } = await supabase
+    .from('expenses')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+
+    console.error("Delete expense error:", error);
+    return false;
+
+  }
+
+  return true;
+
+}
