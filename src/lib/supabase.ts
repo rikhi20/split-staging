@@ -144,3 +144,34 @@ export async function deleteExpense(id: string) {
   return true;
 
 }
+
+// ============================================
+// SETTLE UP FUNCTION
+// ============================================
+
+export async function settleUp(
+  groupId: string,
+  amount: number,
+  paid_by: string,
+  paid_to: string
+) {
+
+  const { error } = await supabase
+    .from('settlements')
+    .insert([
+      {
+        group_id: groupId,
+        amount,
+        paid_by,
+        paid_to,
+        settlement_date: new Date().toISOString().slice(0, 10),
+      },
+    ]);
+
+  if (error) {
+    console.error('settleUp error:', error);
+    return false;
+  }
+
+  return true;
+}
