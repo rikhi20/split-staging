@@ -1,81 +1,187 @@
-import { Users, ArrowRight } from 'lucide-react';
-import { Expense } from '../lib/supabase';
+import { useState } from 'react';
+import { settleUp, Settlement, Expense } from '../lib/supabase';
 
 interface Props {
+  groupId: string;
   expenses: Expense[];
+  settlements: Settlement[];
+  onSettled: () => void;
 }
 
-const PERSON1_NAME = "Rikhi";
-const PERSON2_NAME = "Saki";
+export function ExpenseSummary({
+  groupId,
+  expenses,
+  settlements,
+  onSettled
+}: Props) {
 
-export function ExpenseSummary({ expenses }: Props) {
+  const [loading, setLoading] = useState(false);
 
-  const person1Paid = expenses
-    .filter(e => e.paid_by === 'person1')
+  // ============================================
+  // CALCULATE TOTALS
+  // ============================================
+
+  const youPaid = expenses
+    .filter(e => e.paid_by === 'you')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const person2Paid = expenses
-    .filter(e => e.paid_by === 'person2')
+  const partnerPaid = expenses
+    .filter(e => e.paid_by === 'partner')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const total = person1Paid + person2Paid;
-  const split = total / 2;
+  const total = youPaid + partnerPaid;
+  const half = total / 2;
 
-  const person1Balance = person1Paid - split;
-  const person2Balance = person2Paid - split;
+  const balance = youPaid - half;
+
+  // subtract settlements already done
+  const settlementsTotal = settlements.reduce(
+    (sum, s) => sum + Number(s.amount),
+    0
+  );
+
+  const finalBalance = balance - settlementsTotal;
+
+  // ============================================
+  // SETTLE HANDLER
+  // ============================================
+
+  async function handleSettle() {
+
+    if (finalBalance === 0) return;
+
+    setLoading(true);
+
+    const amount = Math.abs(finalBalance);
+
+    const success = await settleUp(
+      groupId,
+      amount,
+      finalBalance > 0 ? 'partner' : 'you',
+      finalBalance > 0 ? 'you' : 'partner'
+    );
+
+    setLoading(false);
+
+    if (success) {
+      onSettled();
+    } else {
+      alert('Settlement failed');
+    }
+
+  }
+
+  // ============================================
+  // UI
+  // ============================================
 
   return (
-    <div className="space-y-4">
 
-      {/* Paid cards */}
-      <div className="grid grid-cols-2 gap-4">
+    <div className="bg-white rounded-xl shadow p-4 mb-4">
 
-        <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white p-4 rounded-xl shadow">
-          <div className="flex items-center gap-2 mb-1">
-            <Users size={18}/>
-            <span className="text-sm opacity-90">{PERSON1_NAME} Paid</span>
-          </div>
-          <div className="text-2xl font-bold">
-            ¥{person1Paid.toLocaleString()}
-          </div>
+      <h2 className="text-lg font-semibold mb-3">
+        Summary
+      </h2>
+
+      <div className="space-y-1 text-sm">
+
+        <div className="flex justify-between">
+          <span>You paid:</span>
+          <span className="font-medium">
+            ¥{youPaid.toLocaleString()}
+          </span>
         </div>
 
-        <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-xl shadow">
-          <div className="flex items-center gap-2 mb-1">
-            <Users size={18}/>
-            <span className="text-sm opacity-90">{PERSON2_NAME} Paid</span>
-          </div>
-          <div className="text-2xl font-bold">
-            ¥{person2Paid.toLocaleString()}
-          </div>
+        <div className="flex justify-between">
+          <span>Partner paid:</span>
+          <span className="font-medium">
+            ¥{partnerPaid.toLocaleString()}
+          </span>
+        </div>
+
+        <div className="flex justify-between border-t pt-2 mt-2 font-semibold">
+
+          {finalBalance > 0 && (
+            <>
+              <span>Partner owes you:</span>
+              <span className="text-green-600">
+                ¥{finalBalance.toLocaleString()}
+              </span>
+            </>
+          )}
+
+          {finalBalance < 0 && (
+            <>
+              <span>You owe partner:</span>
+              <span className="text-red-600">
+                ¥{Math.abs(finalBalance).toLocaleString()}
+              </span>
+            </>
+          )}
+
+          {finalBalance === 0 && (
+            <>
+              <span>All settled</span>
+              <span className="text-gray-500">
+                ✓
+              </span>
+            </>
+          )}
+
         </div>
 
       </div>
 
+      {finalBalance !== 0 && (
 
-      {/* Settlement card */}
-      {Math.abs(person1Balance) > 0.01 && (
-        <div className="bg-gradient-to-r from-orange-400 to-orange-500 text-white p-4 rounded-xl shadow">
+        <button
+          onClick={handleSettle}
+          disabled={loading}
+          className="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg"
+        >
+          {loading ? "Settling..." : "Settle Up"}
+        </button>
 
-          <div className="flex items-center gap-2 mb-1">
-            <ArrowRight size={18}/>
-            <span className="text-sm opacity-90">Settlement</span>
-          </div>
+      )}
 
-          <div className="text-lg font-semibold">
-            {person1Balance > 0
-              ? `${PERSON2_NAME} owes ${PERSON1_NAME}`
-              : `${PERSON1_NAME} owes ${PERSON2_NAME}`
-            }
-          </div>
+      {/* ============================================
+          SETTLEMENT HISTORY
+      ============================================ */}
 
-          <div className="text-2xl font-bold">
-            ¥{Math.abs(person1Balance).toLocaleString()}
+      {settlements.length > 0 && (
+
+        <div className="mt-4">
+
+          <h3 className="text-sm font-semibold mb-2">
+            Settlement History
+          </h3>
+
+          <div className="space-y-1 text-xs text-gray-600">
+
+            {settlements.map(s => (
+
+              <div key={s.id} className="flex justify-between">
+
+                <span>
+                  {s.paid_by} → {s.paid_to}
+                </span>
+
+                <span>
+                  ¥{Number(s.amount).toLocaleString()}
+                </span>
+
+              </div>
+
+            ))}
+
           </div>
 
         </div>
+
       )}
 
     </div>
+
   );
+
 }
