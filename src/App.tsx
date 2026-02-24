@@ -13,6 +13,10 @@ import {
 } from './lib/supabase';
 
 
+// YOUR REAL GROUP ID
+const GROUP_ID = 'ad49abdf-fe1c-49f0-b0a4-5f4e8456a83f';
+
+
 function App() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -30,42 +34,19 @@ function App() {
 
       setLoading(true);
 
-      //----------------------------------------
-      // Calculate date range
-      //----------------------------------------
+      const allExpenses = await getExpenses(GROUP_ID);
+      const allSettlements = await getSettlements(GROUP_ID);
 
-      const startDate = `${selectedMonth}-01`;
-
-      const [year, month] = selectedMonth.split('-');
-
-      const nextMonth =
-        month === '12'
-          ? '01'
-          : String(Number(month) + 1).padStart(2, '0');
-
-      const nextYear =
-        month === '12'
-          ? String(Number(year) + 1)
-          : year;
-
-      const endDate = `${nextYear}-${nextMonth}-01`;
-
-      //----------------------------------------
-      // Fetch correctly
-      //----------------------------------------
-
-      const expensesData = await getExpenses(
-        startDate,
-        endDate
+      const filteredExpenses = allExpenses.filter(e =>
+        e.expense_date.startsWith(selectedMonth)
       );
 
-      const settlementsData = await getSettlements(
-        startDate,
-        endDate
+      const filteredSettlements = allSettlements.filter(s =>
+        s.settlement_date.startsWith(selectedMonth)
       );
 
-      setExpenses(expensesData);
-      setSettlements(settlementsData);
+      setExpenses(filteredExpenses);
+      setSettlements(filteredSettlements);
 
     } catch (err) {
 
@@ -82,9 +63,7 @@ function App() {
 
 
   useEffect(() => {
-
     loadData();
-
   }, [selectedMonth]);
 
 
@@ -94,44 +73,61 @@ function App() {
 
       <div className="max-w-2xl mx-auto p-6">
 
+        {/* Header */}
+
         <div className="flex items-center gap-3 mb-6">
 
           <Wallet className="text-blue-500" size={32} />
 
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-2xl font-bold text-gray-800">
             Expense Tracker
           </h1>
 
         </div>
 
 
-        <input
-          type="month"
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="border p-2 rounded mb-4 w-full"
-        />
+        {/* Month selector */}
+
+        <div className="bg-white p-4 rounded-xl shadow mb-6">
+
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            Select Month
+          </label>
+
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="border rounded-lg p-2 w-full"
+          />
+
+        </div>
 
 
         {loading ? (
 
-          <div>Loading...</div>
+          <div className="text-center text-gray-500">
+            Loading...
+          </div>
 
         ) : (
 
           <>
             <ExpenseSummary
+              groupId={GROUP_ID}
               expenses={expenses}
               settlements={settlements}
               onSettled={loadData}
             />
 
             <ExpenseForm
+              groupId={GROUP_ID}
               onExpenseAdded={loadData}
             />
 
             <ExpenseList
               expenses={expenses}
+              groupId={GROUP_ID}
               onChanged={loadData}
             />
           </>
