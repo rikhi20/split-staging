@@ -1,103 +1,159 @@
-import { Trash2, Users, User } from 'lucide-react';
-import { Expense, supabase } from '../lib/supabase';
+import { useState } from "react";
+import { supabase } from "../lib/supabase";
 
-interface ExpenseListProps {
-  expenses: Expense[];
-  onExpenseDeleted: () => void;
+interface Props {
+  groupId: string;
+  onExpenseAdded: () => void;
 }
 
-export function ExpenseList({ expenses, onExpenseDeleted }: ExpenseListProps) {
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return;
+export function ExpenseForm({ groupId, onExpenseAdded }: Props) {
 
-    const { error } = await supabase.from('expenses').delete().eq('id', id);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [splitEqual, setSplitEqual] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-    if (error) {
-      console.error('Error deleting expense:', error);
-      alert('Failed to delete expense. Please try again.');
-    } else {
-      onExpenseDeleted();
+  //--------------------------------------------------
+  // SUBMIT
+  //--------------------------------------------------
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!amount || !groupId) return;
+
+    setLoading(true);
+
+    try {
+      //--------------------------------------------------
+      // GET CURRENT USER
+      //--------------------------------------------------
+
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
+
+      if (!user) throw new Error("Not logged in");
+
+      //--------------------------------------------------
+      // CREATE EXPENSE
+      //--------------------------------------------------
+
+      const { data: expense, error } = await supabase
+        .from("expenses")
+        .insert({
+          group_id: groupId,
+          paid_by: user.id,
+          amount: Number(amount),
+          description: description || null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      //--------------------------------------------------
+      // GET GROUP MEMBERS
+      //--------------------------------------------------
+
+      const { data: members } = await supabase
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", groupId);
+
+      if (!members || members.length === 0)
+        throw new Error("No group members");
+
+      //--------------------------------------------------
+      // CREATE SPLITS
+      //--------------------------------------------------
+
+      if (splitEqual) {
+
+        const splitAmount = Number(amount) / members.length;
+
+        const splits = members.map(member => ({
+          expense_id: expense.id,
+          user_id: member.user_id,
+          amount: splitAmount,
+        }));
+
+        const { error: splitError } = await supabase
+          .from("expense_splits")
+          .insert(splits);
+
+        if (splitError) throw splitError;
+      }
+
+      //--------------------------------------------------
+      // RESET
+      //--------------------------------------------------
+
+      setAmount("");
+      setDescription("");
+
+      onExpenseAdded();
+
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add expense");
     }
-  };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(date);
-  };
-
-  if (expenses.length === 0) {
-    return (
-      <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
-        <p>No expenses yet. Add your first expense above!</p>
-      </div>
-    );
+    setLoading(false);
   }
 
+  //--------------------------------------------------
+  // UI
+  //--------------------------------------------------
+
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      <div className="p-4 bg-gray-50 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">All Expenses</h2>
-      </div>
+    <div className="bg-white p-4 rounded-xl shadow">
 
-      <div className="divide-y divide-gray-200">
-        {expenses.map((expense) => (
-          <div
-            key={expense.id}
-            className="p-4 hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-gray-900">{expense.expense_type}</span>
-                  {expense.split ? (
-                    <Users size={14} className="text-blue-500 flex-shrink-0" />
-                  ) : (
-                    <User size={14} className="text-gray-400 flex-shrink-0" />
-                  )}
-                </div>
+      <h2 className="font-semibold mb-3">
+        Add Expense
+      </h2>
 
-                {expense.description && (
-                  <p className="text-sm text-gray-600 mb-1">{expense.description}</p>
-                )}
+      <form onSubmit={handleSubmit} className="space-y-3">
 
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <span>
-                    Paid by {expense.paid_by === 'person1' ? 'Rikhi' : 'Saki'}
-                  </span>
-                  <span>•</span>
-                  <span>{formatDate(expense.expense_date)}</span>
-                </div>
-              </div>
+        {/* amount */}
+        <input
+          type="number"
+          placeholder="Amount"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          className="w-full border rounded-lg px-3 py-2"
+        />
 
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <p className="text-lg font-bold text-gray-900">
-                    ¥{Number(expense.amount).toLocaleString()}
-                  </p>
-                  {expense.split && (
-                    <p className="text-xs text-gray-500">
-                      ¥{(Number(expense.amount) / 2).toLocaleString()} each
-                    </p>
-                  )}
-                </div>
+        {/* description */}
+        <input
+          type="text"
+          placeholder="Description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="w-full border rounded-lg px-3 py-2"
+        />
 
-                <button
-                  onClick={() => handleDelete(expense.id)}
-                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                  aria-label="Delete expense"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+        {/* split toggle */}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={splitEqual}
+            onChange={(e) => setSplitEqual(e.target.checked)}
+          />
+          Split equally
+        </label>
+
+        {/* button */}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600"
+        >
+          {loading ? "Adding..." : "Add Expense"}
+        </button>
+
+      </form>
+
     </div>
   );
 }
