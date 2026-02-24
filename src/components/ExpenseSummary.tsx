@@ -1,20 +1,26 @@
 import { CheckCircle, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import { Expense, Settlement, supabase } from '../lib/supabase';
+import { Expense, Settlement, recordSettlement } from '../lib/supabase';
 
 interface Props {
   expenses: Expense[];
   settlements: Settlement[];
+  groupId: string; // ✅ REQUIRED FOR V3
   onSettled: () => void;
 }
 
-export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
+export function ExpenseSummary({
+  expenses,
+  settlements,
+  groupId,
+  onSettled
+}: Props) {
 
   const [showModal, setShowModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ============================================
-  // CALCULATE PAYMENTS (ONLY SPLIT EXPENSES)
+  // CALCULATE TOTAL PAID
   // ============================================
 
   let rikhiPaid = 0;
@@ -22,68 +28,58 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
   expenses.forEach(expense => {
 
-    if (!expense.split) return;
-
-    if (expense.paid_by === 'person1') {
-      rikhiPaid += expense.amount;
+    if (expense.paid_by === 'Rikhi') {
+      rikhiPaid += Number(expense.amount);
     }
 
-    if (expense.paid_by === 'person2') {
-      sakiPaid += expense.amount;
+    if (expense.paid_by === 'Saki') {
+      sakiPaid += Number(expense.amount);
     }
 
   });
 
   // ============================================
-  // CALCULATE BALANCE
-  // Positive = person2 owes person1
-  // Negative = person1 owes person2
+  // CALCULATE BASE BALANCE
   // ============================================
 
-  let balance = 0;
+  const total = rikhiPaid + sakiPaid;
+  const eachShouldPay = total / 2;
 
-  expenses.forEach(expense => {
+  let balance = rikhiPaid - eachShouldPay;
 
-    if (!expense.split) return;
+  // ============================================
+  // APPLY SETTLEMENTS
+  // ============================================
 
-    if (expense.paid_by === 'person1') {
-      balance += expense.amount / 2;
-    }
-
-    if (expense.paid_by === 'person2') {
-      balance -= expense.amount / 2;
-    }
-
-  });
-
-  // Apply settlements
   settlements.forEach(settlement => {
 
-    if (settlement.paid_by === 'person1') {
-      balance -= settlement.amount;
+    if (settlement.paid_by === 'Rikhi') {
+      balance -= Number(settlement.amount);
     }
 
-    if (settlement.paid_by === 'person2') {
-      balance += settlement.amount;
+    if (settlement.paid_by === 'Saki') {
+      balance += Number(settlement.amount);
     }
 
   });
 
-  const owedAmount = Math.abs(Math.round(balance));
+  // round properly
+  balance = Math.round(balance);
 
-  const owedBy = balance > 0 ? 'person2' : 'person1';
-  const owedTo = balance > 0 ? 'person1' : 'person2';
+  const owedAmount = Math.abs(balance);
 
-  const owedByName = owedBy === 'person1' ? 'Rikhi' : 'Saki';
-  const owedToName = owedTo === 'person1' ? 'Rikhi' : 'Saki';
+  const owedBy = balance > 0 ? 'Saki' : 'Rikhi';
+  const owedTo = balance > 0 ? 'Rikhi' : 'Saki';
+
+  const isSettled = owedAmount === 0;
 
   // ============================================
-  // SETTLE FUNCTION (CORRECT V3 INSERT)
+  // SETTLE FUNCTION (FIXED FOR V3)
   // ============================================
 
   const handleSettleUp = async () => {
 
-    if (owedAmount === 0) {
+    if (isSettled) {
       alert('Already settled');
       return;
     }
@@ -92,16 +88,12 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
       setIsSubmitting(true);
 
-      const { error } = await supabase
-        .from('settlements')
-        .insert({
-          amount: owedAmount,
-          paid_by: owedBy,
-          paid_to: owedTo,
-          settlement_date: new Date().toISOString().slice(0, 10),
-        });
-
-      if (error) throw error;
+      await recordSettlement(
+        groupId,     // ✅ FIXED
+        owedAmount,
+        owedBy,
+        owedTo
+      );
 
       setShowModal(false);
 
@@ -110,7 +102,6 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
     } catch (err) {
 
       console.error(err);
-
       alert('Failed to record settlement');
 
     } finally {
@@ -130,6 +121,8 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
       <div className="space-y-4 mb-6">
 
+        {/* Paid cards */}
+
         <div className="grid grid-cols-2 gap-4">
 
           <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-lg p-4">
@@ -146,7 +139,6 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
             </p>
 
           </div>
-
 
           <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
 
@@ -166,8 +158,10 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
         </div>
 
 
-        <div className={`bg-gradient-to-br rounded-lg p-6 shadow-lg border ${
-          owedAmount === 0
+        {/* Settlement card */}
+
+        <div className={`bg-gradient-to-br rounded-lg p-6 shadow-lg border transition-all ${
+          isSettled
             ? 'from-green-500 to-emerald-600 border-green-400'
             : 'from-amber-500 to-orange-600 border-amber-400'
         } text-white`}>
@@ -180,21 +174,21 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
             <button
               onClick={() => setShowModal(true)}
-              disabled={owedAmount === 0}
+              disabled={isSettled}
               className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 ${
-                owedAmount === 0
+                isSettled
                   ? 'bg-white/30 cursor-default'
                   : 'bg-white text-amber-600 hover:bg-gray-100'
               }`}
             >
               <CheckCircle size={18} />
-              {owedAmount === 0 ? 'Settled' : 'Settle'}
+              {isSettled ? 'Settled' : 'Settle'}
             </button>
 
           </div>
 
 
-          {owedAmount === 0 ? (
+          {isSettled ? (
 
             <div className="text-center">
               <p className="text-xl font-semibold">
@@ -207,7 +201,7 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
             <div className="bg-white/20 rounded-lg p-4">
 
               <p className="font-bold text-lg">
-                {owedByName} owes {owedToName}
+                {owedBy} owes {owedTo}
               </p>
 
               <p className="text-3xl font-bold">
@@ -223,6 +217,8 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
       </div>
 
 
+      {/* Modal */}
+
       {showModal && (
 
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
@@ -234,7 +230,7 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
             </h3>
 
             <p className="mb-6">
-              {owedByName} will pay ¥{owedAmount.toLocaleString()} to {owedToName}
+              {owedBy} will pay ¥{owedAmount.toLocaleString()} to {owedTo}
             </p>
 
             <div className="flex gap-3">
@@ -244,7 +240,7 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
                 disabled={isSubmitting}
                 className="flex-1 bg-green-500 text-white py-2 rounded-lg"
               >
-                Confirm
+                {isSubmitting ? 'Recording...' : 'Confirm'}
               </button>
 
               <button
