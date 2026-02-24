@@ -1,121 +1,164 @@
-import { ArrowRight } from 'lucide-react';
-import { Expense } from '../lib/supabase';
+import { ArrowRight, CheckCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState } from 'react';
+import { Expense, Settlement, supabase } from '../lib/supabase';
 
-interface ExpenseSummaryProps {
+interface Props {
   expenses: Expense[];
-  selectedMonth: string; // NEW (YYYY-MM)
+  settlements: Settlement[];
+  onSettled: () => void;
 }
 
-export function ExpenseSummary({ expenses, selectedMonth }: ExpenseSummaryProps) {
+export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
+  const [showModal, setShowModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // NEW: filter expenses by selected month
-  const monthlyExpenses = expenses.filter((expense) =>
-    expense.expense_month === selectedMonth
-  );
+  let balance = 0;
+  let rikhiPaid = 0;
+  let sakiPaid = 0;
 
-  const calculateBalance = () => {
-    let person1Paid = 0;
-    let person2Paid = 0;
-    let person1Owes = 0;
-    let person2Owes = 0;
+  expenses.forEach(expense => {
+    if (!expense.split) return;
 
-    monthlyExpenses.forEach((expense) => {
-      const amount = Number(expense.amount);
+    if (expense.paid_by === 'person1') {
+      rikhiPaid += expense.amount;
+      balance += expense.amount / 2;
+    } else {
+      sakiPaid += expense.amount;
+      balance -= expense.amount / 2;
+    }
+  });
 
-      if (expense.paid_by === 'person1') {
-        person1Paid += amount;
-        if (expense.split) {
-          person2Owes += amount / 2;
-        }
-      } else {
-        person2Paid += amount;
-        if (expense.split) {
-          person1Owes += amount / 2;
-        }
-      }
+  settlements.forEach(settlement => {
+    if (settlement.paid_by === 'person1') {
+      balance -= settlement.amount || settlement.settled_amount;
+    } else {
+      balance += settlement.amount || settlement.settled_amount;
+    }
+  });
+
+  const owedBy = balance > 0 ? 'person2' : 'person1';
+  const owedAmount = Math.abs(balance);
+
+  const handleSettleUp = async () => {
+    if (owedAmount === 0) {
+      alert('Already settled');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const { error } = await supabase.from('settlements').insert({
+      amount: owedAmount,
+      from_payer: owedBy === 'person1' ? 'person2' : 'person1',
+      to_payer: owedBy,
+      settled_amount: owedAmount,
+      settlement_date: new Date().toISOString().slice(0, 10),
     });
 
-    const netBalance = person2Owes - person1Owes;
+    if (error) {
+      console.error('Error:', error);
+      alert('Failed to record settlement');
+    } else {
+      setShowModal(false);
+      onSettled();
+    }
 
-    return {
-      person1Paid,
-      person2Paid,
-      totalSpent: person1Paid + person2Paid,
-      netBalance,
-      owedBy: netBalance > 0 ? 'person2' : 'person1',
-      owedAmount: Math.abs(netBalance),
-    };
+    setIsSubmitting(false);
   };
 
-  const balance = calculateBalance();
-
-  if (monthlyExpenses.length === 0) {
-    return (
-      <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
-        <h2 className="text-lg font-semibold">Summary</h2>
-        <p className="opacity-90 mt-2">No expenses this month</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
-      <h2 className="text-lg font-semibold mb-4">Summary</h2>
-
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-          <p className="text-xs opacity-90 mb-1">Rikhi Paid</p>
-          <p className="text-2xl font-bold">
-            ¥{balance.person1Paid.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-          <p className="text-xs opacity-90 mb-1">Saki Paid</p>
-          <p className="text-2xl font-bold">
-            ¥{balance.person2Paid.toLocaleString()}
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white/15 backdrop-blur-sm rounded-lg p-4 mb-4">
-        <p className="text-xs opacity-90 mb-1">Total Spent This Month</p>
-        <p className="text-3xl font-bold">
-          ¥{balance.totalSpent.toLocaleString()}
-        </p>
-      </div>
-
-      {balance.owedAmount > 0 && (
-        <div className="bg-white rounded-lg p-4 text-gray-800">
-          <div className="flex items-center justify-between">
-            <span className="font-medium">
-              {balance.owedBy === 'person2' ? 'Saki' : 'Rikhi'}
-            </span>
-
-            <ArrowRight size={20} className="text-gray-400" />
-
-            <span className="font-medium">
-              {balance.owedBy === 'person2' ? 'Rikhi' : 'Saki'}
-            </span>
+    <>
+      <div className="space-y-4 mb-6">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className="text-emerald-600" size={20} />
+              <span className="text-sm font-semibold text-emerald-700">Rikhi Paid</span>
+            </div>
+            <p className="text-2xl font-bold text-emerald-900">¥{rikhiPaid.toLocaleString()}</p>
           </div>
 
-          <p className="text-2xl font-bold text-center mt-2 text-blue-600">
-            ¥{balance.owedAmount.toLocaleString()}
-          </p>
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className="text-blue-600" size={20} />
+              <span className="text-sm font-semibold text-blue-700">Saki Paid</span>
+            </div>
+            <p className="text-2xl font-bold text-blue-900">¥{sakiPaid.toLocaleString()}</p>
+          </div>
+        </div>
 
-          <p className="text-xs text-center text-gray-600 mt-1">
-            {balance.owedBy === 'person2'
-              ? 'Saki owes Rikhi'
-              : 'Rikhi owes Saki'}
-          </p>
+        <div className={`bg-gradient-to-br rounded-lg p-6 shadow-lg border transition-all ${
+          owedAmount === 0
+            ? 'from-green-500 to-emerald-600 border-green-400'
+            : 'from-amber-500 to-orange-600 border-amber-400'
+        } text-white`}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold">Settlement Status</h2>
+            <button
+              onClick={() => setShowModal(true)}
+              disabled={owedAmount === 0}
+              className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all ${
+                owedAmount === 0
+                  ? 'bg-white/30 text-white cursor-default'
+                  : 'bg-white text-amber-600 hover:bg-gray-100'
+              }`}
+            >
+              <CheckCircle size={18} />
+              {owedAmount === 0 ? 'Settled' : 'Settle'}
+            </button>
+          </div>
+
+          {owedAmount === 0 ? (
+            <div className="text-center">
+              <p className="text-xl font-semibold">All settled up!</p>
+              <p className="text-white/80 text-sm mt-1">You're even for this month</p>
+            </div>
+          ) : (
+            <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-white/80 mb-1">Who owes what:</p>
+                  <p className="font-bold text-lg">
+                    {owedBy === 'person1' ? 'Rikhi' : 'Saki'} owes {owedBy === 'person1' ? 'Saki' : 'Rikhi'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-white/80 text-sm mb-1">Amount</p>
+                  <p className="text-3xl font-bold">¥{owedAmount.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Confirm Settlement</h3>
+            <p className="text-gray-600 mb-6">
+              {owedBy === 'person1' ? 'Rikhi' : 'Saki'} will pay{' '}
+              <span className="font-bold text-lg text-amber-600">¥{owedAmount.toLocaleString()}</span> to{' '}
+              {owedBy === 'person1' ? 'Saki' : 'Rikhi'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleSettleUp}
+                disabled={isSubmitting}
+                className="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {isSubmitting ? 'Recording...' : 'Confirm'}
+              </button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {balance.owedAmount === 0 && (
-        <div className="bg-white rounded-lg p-4 text-center">
-          <p className="text-gray-800 font-medium">All settled up!</p>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

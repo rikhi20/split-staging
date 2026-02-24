@@ -1,88 +1,52 @@
 /*
-  Expense Tracker - SAFE UPGRADE SCHEMA
-  Adds:
-  - expense_date (monthly tracking)
-  - settled (settle up feature)
-  - indexes for performance
+  # Create expenses tracking table
+
+  1. New Tables
+    - `expenses`
+      - `id` (uuid, primary key) - Unique identifier for each expense
+      - `expense_type` (text) - Category/type of expense (e.g., Food, Transport, Entertainment)
+      - `amount` (numeric) - Amount in JPY
+      - `paid_by` (text) - Who paid for this expense ('person1' or 'person2')
+      - `split` (boolean) - Whether this expense should be split between both people
+      - `description` (text, optional) - Additional notes about the expense
+      - `created_at` (timestamptz) - When the expense was recorded
+
+  2. Security
+    - Enable RLS on `expenses` table
+    - Add policy allowing anyone to read all expenses (for simplicity in this couple app)
+    - Add policy allowing anyone to insert expenses
+    - Add policy allowing anyone to update/delete expenses
 */
 
--- Add expense_date column safely
-ALTER TABLE expenses
-ADD COLUMN IF NOT EXISTS expense_date date DEFAULT current_date;
+CREATE TABLE IF NOT EXISTS expenses (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  expense_type text NOT NULL,
+  amount numeric NOT NULL CHECK (amount >= 0),
+  paid_by text NOT NULL CHECK (paid_by IN ('person1', 'person2')),
+  split boolean NOT NULL DEFAULT true,
+  description text,
+  created_at timestamptz DEFAULT now()
+);
 
--- Add settled column safely
-ALTER TABLE expenses
-ADD COLUMN IF NOT EXISTS settled boolean DEFAULT false;
-
--- Fix existing rows (VERY IMPORTANT)
-UPDATE expenses
-SET expense_date = created_at::date
-WHERE expense_date IS NULL;
-
-UPDATE expenses
-SET settled = false
-WHERE settled IS NULL;
-
--- Make columns NOT NULL after fixing data
-ALTER TABLE expenses
-ALTER COLUMN expense_date SET NOT NULL;
-
-ALTER TABLE expenses
-ALTER COLUMN settled SET NOT NULL;
-
--- Performance indexes
-CREATE INDEX IF NOT EXISTS idx_expense_date
-ON expenses(expense_date);
-
-CREATE INDEX IF NOT EXISTS idx_expense_settled
-ON expenses(settled);
-
--- Enable RLS (safe if already enabled)
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 
--- Policies (safe recreate)
-DO $$ 
-BEGIN
+CREATE POLICY "Anyone can view expenses"
+  ON expenses
+  FOR SELECT
+  USING (true);
 
-IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE policyname = 'Anyone can view expenses'
-) THEN
-    CREATE POLICY "Anyone can view expenses"
-    ON expenses
-    FOR SELECT
-    USING (true);
-END IF;
+CREATE POLICY "Anyone can add expenses"
+  ON expenses
+  FOR INSERT
+  WITH CHECK (true);
 
-IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE policyname = 'Anyone can add expenses'
-) THEN
-    CREATE POLICY "Anyone can add expenses"
-    ON expenses
-    FOR INSERT
-    WITH CHECK (true);
-END IF;
+CREATE POLICY "Anyone can update expenses"
+  ON expenses
+  FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
 
-IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE policyname = 'Anyone can update expenses'
-) THEN
-    CREATE POLICY "Anyone can update expenses"
-    ON expenses
-    FOR UPDATE
-    USING (true)
-    WITH CHECK (true);
-END IF;
-
-IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE policyname = 'Anyone can delete expenses'
-) THEN
-    CREATE POLICY "Anyone can delete expenses"
-    ON expenses
-    FOR DELETE
-    USING (true);
-END IF;
-
-END $$;
+CREATE POLICY "Anyone can delete expenses"
+  ON expenses
+  FOR DELETE
+  USING (true);
