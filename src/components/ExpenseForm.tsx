@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addExpense, Person } from '../lib/supabase';
+import { addExpense } from '../lib/supabase';
 
 interface Props {
   groupId: string;
@@ -8,93 +8,90 @@ interface Props {
 
 export function ExpenseForm({ groupId, onExpenseAdded }: Props) {
 
-  const [type, setType] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState<Person>('Rikhi');
   const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [paidBy, setPaidBy] = useState('person1');
   const [loading, setLoading] = useState(false);
 
+  const today = new Date().toISOString().slice(0, 10);
 
   async function handleSubmit(e: React.FormEvent) {
 
     e.preventDefault();
 
-    if (!type || !amount) {
-      alert('Fill all fields');
+    if (!description || !amount) {
+      alert("Please fill all fields");
       return;
     }
 
-    try {
+    setLoading(true);
 
-      setLoading(true);
+    const success = await addExpense({
 
-      await addExpense(
-        groupId,
-        type,
-        Number(amount),
-        paidBy,
-        description
-      );
+      group_id: groupId,
+      description: description,
+      amount: Number(amount),
+      paid_by: paidBy,
+      expense_date: today
 
-      setType('');
-      setAmount('');
+    });
+
+    setLoading(false);
+
+    if (success) {
+
       setDescription('');
+      setAmount('');
+      setPaidBy('person1');
 
       onExpenseAdded();
 
-    } catch {
+    } else {
 
-      alert('Failed to add expense');
-
-    } finally {
-
-      setLoading(false);
+      alert("Failed to add expense");
 
     }
 
   }
 
-
   return (
 
-    <form onSubmit={handleSubmit} className="bg-white p-4 rounded mb-4">
+    <form
+      onSubmit={handleSubmit}
+      className="bg-white rounded-xl shadow-sm border p-4 mb-4 space-y-3"
+    >
 
       <input
-        placeholder="Expense type"
-        value={type}
-        onChange={(e) => setType(e.target.value)}
-        className="border p-2 rounded w-full mb-2"
+        type="text"
+        placeholder="Expense description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
       />
 
       <input
-        placeholder="Amount"
         type="number"
+        placeholder="Amount"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
-        className="border p-2 rounded w-full mb-2"
+        className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
       />
 
       <select
         value={paidBy}
-        onChange={(e) => setPaidBy(e.target.value as Person)}
-        className="border p-2 rounded w-full mb-2"
+        onChange={(e) => setPaidBy(e.target.value)}
+        className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
       >
-        <option value="Rikhi">Rikhi</option>
-        <option value="Saki">Saki</option>
+        <option value="person1">Rikhi</option>
+        <option value="person2">Saki</option>
       </select>
 
-      <input
-        placeholder="Description"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        className="border p-2 rounded w-full mb-2"
-      />
-
       <button
+        type="submit"
         disabled={loading}
-        className="bg-blue-500 text-white px-4 py-2 rounded w-full"
+        className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 rounded-lg transition"
       >
-        Add Expense
+        {loading ? "Adding..." : "Add Expense"}
       </button>
 
     </form>
