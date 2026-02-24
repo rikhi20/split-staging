@@ -83,3 +83,42 @@ export async function recordSettlement(
 
   return data;
 }
+
+// ============================================
+// FETCH FUNCTIONS
+// ============================================
+
+export async function getExpenses(startDate: string, endDate: string) {
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .gte('expense_date', startDate)
+    .lt('expense_date', endDate)
+    .order('expense_date', { ascending: false });
+
+  if (error) {
+    console.error('getExpenses error:', error);
+    throw error;
+  }
+
+  return data as Expense[];
+}
+
+
+export async function getSettlements(startDate: string, endDate: string) {
+
+  const { data, error } = await supabase
+    .from('settlements')
+    .select('*')
+    .gte('settlement_date', startDate)
+    .lt('settlement_date', endDate)
+    .order('settlement_date', { ascending: false });
+
+  if (error) {
+    console.error('getSettlements error:', error);
+    throw error;
+  }
+
+  return data as Settlement[];
+}
