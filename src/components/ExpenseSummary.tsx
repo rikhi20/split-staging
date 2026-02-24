@@ -1,6 +1,6 @@
 import { CheckCircle, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import { Expense, Settlement, recordSettlement } from '../lib/supabase';
+import { Expense, Settlement, supabase } from '../lib/supabase';
 
 interface Props {
   expenses: Expense[];
@@ -14,7 +14,7 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ============================================
-  // CALCULATE PAYMENTS
+  // CALCULATE PAYMENTS (ONLY SPLIT EXPENSES)
   // ============================================
 
   let rikhiPaid = 0;
@@ -22,33 +22,48 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
   expenses.forEach(expense => {
 
-    if (expense.paid_by === 'Rikhi') {
+    if (!expense.split) return;
+
+    if (expense.paid_by === 'person1') {
       rikhiPaid += expense.amount;
     }
 
-    if (expense.paid_by === 'Saki') {
+    if (expense.paid_by === 'person2') {
       sakiPaid += expense.amount;
     }
 
   });
 
   // ============================================
-  // CALCULATE BALANCE (50/50 SPLIT)
+  // CALCULATE BALANCE
+  // Positive = person2 owes person1
+  // Negative = person1 owes person2
   // ============================================
 
-  const total = rikhiPaid + sakiPaid;
-  const eachShouldPay = total / 2;
+  let balance = 0;
 
-  let balance = rikhiPaid - eachShouldPay;
+  expenses.forEach(expense => {
 
-  // subtract settlements
+    if (!expense.split) return;
+
+    if (expense.paid_by === 'person1') {
+      balance += expense.amount / 2;
+    }
+
+    if (expense.paid_by === 'person2') {
+      balance -= expense.amount / 2;
+    }
+
+  });
+
+  // Apply settlements
   settlements.forEach(settlement => {
 
-    if (settlement.paid_by === 'Rikhi') {
+    if (settlement.paid_by === 'person1') {
       balance -= settlement.amount;
     }
 
-    if (settlement.paid_by === 'Saki') {
+    if (settlement.paid_by === 'person2') {
       balance += settlement.amount;
     }
 
@@ -56,11 +71,14 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
   const owedAmount = Math.abs(Math.round(balance));
 
-  const owedBy = balance > 0 ? 'Saki' : 'Rikhi';
-  const owedTo = balance > 0 ? 'Rikhi' : 'Saki';
+  const owedBy = balance > 0 ? 'person2' : 'person1';
+  const owedTo = balance > 0 ? 'person1' : 'person2';
+
+  const owedByName = owedBy === 'person1' ? 'Rikhi' : 'Saki';
+  const owedToName = owedTo === 'person1' ? 'Rikhi' : 'Saki';
 
   // ============================================
-  // SETTLE FUNCTION
+  // SETTLE FUNCTION (CORRECT V3 INSERT)
   // ============================================
 
   const handleSettleUp = async () => {
@@ -74,11 +92,16 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
       setIsSubmitting(true);
 
-      await recordSettlement(
-        owedAmount,
-        owedBy,
-        owedTo
-      );
+      const { error } = await supabase
+        .from('settlements')
+        .insert({
+          amount: owedAmount,
+          paid_by: owedBy,
+          paid_to: owedTo,
+          settlement_date: new Date().toISOString().slice(0, 10),
+        });
+
+      if (error) throw error;
 
       setShowModal(false);
 
@@ -106,8 +129,6 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
     <>
 
       <div className="space-y-4 mb-6">
-
-        {/* Paid summary */}
 
         <div className="grid grid-cols-2 gap-4">
 
@@ -145,9 +166,7 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
         </div>
 
 
-        {/* Settlement card */}
-
-        <div className={`bg-gradient-to-br rounded-lg p-6 shadow-lg border transition-all ${
+        <div className={`bg-gradient-to-br rounded-lg p-6 shadow-lg border ${
           owedAmount === 0
             ? 'from-green-500 to-emerald-600 border-green-400'
             : 'from-amber-500 to-orange-600 border-amber-400'
@@ -178,11 +197,9 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
           {owedAmount === 0 ? (
 
             <div className="text-center">
-
               <p className="text-xl font-semibold">
                 All settled up!
               </p>
-
             </div>
 
           ) : (
@@ -190,15 +207,11 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
             <div className="bg-white/20 rounded-lg p-4">
 
               <p className="font-bold text-lg">
-
-                {owedBy} owes {owedTo}
-
+                {owedByName} owes {owedToName}
               </p>
 
               <p className="text-3xl font-bold">
-
                 ¥{owedAmount.toLocaleString()}
-
               </p>
 
             </div>
@@ -209,8 +222,6 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
 
       </div>
 
-
-      {/* Modal */}
 
       {showModal && (
 
@@ -223,9 +234,7 @@ export function ExpenseSummary({ expenses, settlements, onSettled }: Props) {
             </h3>
 
             <p className="mb-6">
-
-              {owedBy} will pay ¥{owedAmount.toLocaleString()} to {owedTo}
-
+              {owedByName} will pay ¥{owedAmount.toLocaleString()} to {owedToName}
             </p>
 
             <div className="flex gap-3">
