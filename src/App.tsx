@@ -13,10 +13,6 @@ import {
 } from './lib/supabase';
 
 
-// ✅ CHANGE THIS to your real group_id from Supabase
-const GROUP_ID = 'ad49abdf-fe1c-49f0-b0a4-5f4e8456a83f';
-
-
 function App() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -34,19 +30,42 @@ function App() {
 
       setLoading(true);
 
-      const allExpenses = await getExpenses(GROUP_ID);
-      const allSettlements = await getSettlements(GROUP_ID);
+      //----------------------------------------
+      // Calculate date range
+      //----------------------------------------
 
-      const filteredExpenses = allExpenses.filter(e =>
-        e.expense_date.startsWith(selectedMonth)
+      const startDate = `${selectedMonth}-01`;
+
+      const [year, month] = selectedMonth.split('-');
+
+      const nextMonth =
+        month === '12'
+          ? '01'
+          : String(Number(month) + 1).padStart(2, '0');
+
+      const nextYear =
+        month === '12'
+          ? String(Number(year) + 1)
+          : year;
+
+      const endDate = `${nextYear}-${nextMonth}-01`;
+
+      //----------------------------------------
+      // Fetch correctly
+      //----------------------------------------
+
+      const expensesData = await getExpenses(
+        startDate,
+        endDate
       );
 
-      const filteredSettlements = allSettlements.filter(s =>
-        s.settlement_date.startsWith(selectedMonth)
+      const settlementsData = await getSettlements(
+        startDate,
+        endDate
       );
 
-      setExpenses(filteredExpenses);
-      setSettlements(filteredSettlements);
+      setExpenses(expensesData);
+      setSettlements(settlementsData);
 
     } catch (err) {
 
@@ -102,14 +121,12 @@ function App() {
 
           <>
             <ExpenseSummary
-              groupId={GROUP_ID}
               expenses={expenses}
               settlements={settlements}
               onSettled={loadData}
             />
 
             <ExpenseForm
-              groupId={GROUP_ID}
               onExpenseAdded={loadData}
             />
 
