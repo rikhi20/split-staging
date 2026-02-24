@@ -143,6 +143,7 @@ function App() {
             <ExpenseSummary
               expenses={expenses}
               settlements={settlements}
+              groupId={group.id}
               onSettled={fetchData}
             />
 
