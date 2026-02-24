@@ -1,33 +1,66 @@
 /*
-  # Update schema to use person1/person2 and date fields
-
-  1. Modifications
-    - Update expenses table to use expense_date instead of created_at for filtering
-    - Update settlements table to use settlement_date and paid_by/paid_to fields
+  FIX settlements and expenses schema for proper split and settlement tracking
 */
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'expenses' AND column_name = 'expense_date'
-  ) THEN
-    ALTER TABLE expenses ADD COLUMN expense_date date DEFAULT CURRENT_DATE;
-  END IF;
-  
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'settlements' AND column_name = 'settlement_date'
-  ) THEN
-    ALTER TABLE settlements ADD COLUMN settlement_date date DEFAULT CURRENT_DATE;
-  END IF;
-  
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'settlements' AND column_name = 'paid_by'
-  ) THEN
-    ALTER TABLE settlements ADD COLUMN paid_by text;
-    ALTER TABLE settlements ADD COLUMN paid_to text;
-    ALTER TABLE settlements ADD COLUMN amount numeric;
-  END IF;
-END $$;
+-- ============================================
+-- EXPENSES TABLE FIX
+-- ============================================
+
+ALTER TABLE expenses
+ADD COLUMN IF NOT EXISTS expense_date date DEFAULT CURRENT_DATE;
+
+ALTER TABLE expenses
+ADD COLUMN IF NOT EXISTS paid_by text NOT NULL DEFAULT 'Rikhi';
+
+ALTER TABLE expenses
+ADD COLUMN IF NOT EXISTS amount numeric NOT NULL DEFAULT 0;
+
+-- ============================================
+-- SETTLEMENTS TABLE FIX (CRITICAL)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS settlements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  paid_by text NOT NULL,
+  paid_to text NOT NULL,
+
+  amount numeric NOT NULL CHECK (amount > 0),
+
+  settlement_date date DEFAULT CURRENT_DATE,
+
+  created_at timestamptz DEFAULT now()
+);
+
+-- ============================================
+-- INDEXES
+-- ============================================
+
+CREATE INDEX IF NOT EXISTS idx_expenses_date
+ON expenses(expense_date);
+
+CREATE INDEX IF NOT EXISTS idx_settlements_date
+ON settlements(settlement_date);
+
+-- ============================================
+-- ENABLE RLS
+-- ============================================
+
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settlements ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- ALLOW ALL (for now)
+-- ============================================
+
+DROP POLICY IF EXISTS "Allow all expenses" ON expenses;
+CREATE POLICY "Allow all expenses"
+ON expenses FOR ALL
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all settlements" ON settlements;
+CREATE POLICY "Allow all settlements"
+ON settlements FOR ALL
+USING (true)
+WITH CHECK (true);
