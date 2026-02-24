@@ -1,5 +1,6 @@
+import { CheckCircle, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import { settleUp, Settlement, Expense } from '../lib/supabase';
+import { Expense, Settlement, settleUp } from '../lib/supabase';
 
 interface Props {
   groupId: string;
@@ -15,164 +16,164 @@ export function ExpenseSummary({
   onSettled
 }: Props) {
 
+  const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // ============================================
-  // CALCULATE TOTALS
-  // ============================================
+  let rikhiPaid = 0;
+  let sakiPaid = 0;
 
-  const youPaid = expenses
-    .filter(e => e.paid_by === 'you')
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+  expenses.forEach(e => {
+    if (e.paid_by === 'Rikhi') rikhiPaid += e.amount;
+    if (e.paid_by === 'Saki') sakiPaid += e.amount;
+  });
 
-  const partnerPaid = expenses
-    .filter(e => e.paid_by === 'partner')
-    .reduce((sum, e) => sum + Number(e.amount), 0);
+  const total = rikhiPaid + sakiPaid;
+  const each = total / 2;
 
-  const total = youPaid + partnerPaid;
-  const half = total / 2;
+  let balance = rikhiPaid - each;
 
-  const balance = youPaid - half;
+  settlements.forEach(s => {
+    if (s.paid_by === 'Rikhi') balance -= s.amount;
+    if (s.paid_by === 'Saki') balance += s.amount;
+  });
 
-  // subtract settlements already done
-  const settlementsTotal = settlements.reduce(
-    (sum, s) => sum + Number(s.amount),
-    0
-  );
+  const owedAmount = Math.abs(Math.round(balance));
 
-  const finalBalance = balance - settlementsTotal;
+  const owedBy = balance > 0 ? 'Saki' : 'Rikhi';
+  const owedTo = balance > 0 ? 'Rikhi' : 'Saki';
 
-  // ============================================
-  // SETTLE HANDLER
-  // ============================================
 
   async function handleSettle() {
 
-    if (finalBalance === 0) return;
+    try {
 
-    setLoading(true);
+      setLoading(true);
 
-    const amount = Math.abs(finalBalance);
+      await settleUp(
+        groupId,
+        owedAmount,
+        owedBy,
+        owedTo
+      );
 
-    const success = await settleUp(
-      groupId,
-      amount,
-      finalBalance > 0 ? 'partner' : 'you',
-      finalBalance > 0 ? 'you' : 'partner'
-    );
+      setShowModal(false);
 
-    setLoading(false);
-
-    if (success) {
       onSettled();
-    } else {
+
+    } catch {
+
       alert('Settlement failed');
+
+    } finally {
+
+      setLoading(false);
+
     }
 
   }
 
-  // ============================================
-  // UI
-  // ============================================
 
   return (
 
-    <div className="bg-white rounded-xl shadow p-4 mb-4">
+    <div className="bg-white p-6 rounded-xl shadow mb-6">
 
-      <h2 className="text-lg font-semibold mb-3">
+      <h2 className="text-lg font-bold mb-4 text-gray-800">
         Summary
       </h2>
 
-      <div className="space-y-1 text-sm">
 
-        <div className="flex justify-between">
-          <span>You paid:</span>
-          <span className="font-medium">
-            ¥{youPaid.toLocaleString()}
-          </span>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+
+        <div className="bg-green-100 p-4 rounded-lg">
+          <div className="flex items-center gap-2">
+            <TrendingUp size={18} />
+            <span>Rikhi Paid</span>
+          </div>
+
+          <div className="text-xl font-bold">
+            ¥{rikhiPaid.toLocaleString()}
+          </div>
         </div>
 
-        <div className="flex justify-between">
-          <span>Partner paid:</span>
-          <span className="font-medium">
-            ¥{partnerPaid.toLocaleString()}
-          </span>
-        </div>
 
-        <div className="flex justify-between border-t pt-2 mt-2 font-semibold">
+        <div className="bg-blue-100 p-4 rounded-lg">
 
-          {finalBalance > 0 && (
-            <>
-              <span>Partner owes you:</span>
-              <span className="text-green-600">
-                ¥{finalBalance.toLocaleString()}
-              </span>
-            </>
-          )}
+          <div className="flex items-center gap-2">
+            <TrendingUp size={18} />
+            <span>Saki Paid</span>
+          </div>
 
-          {finalBalance < 0 && (
-            <>
-              <span>You owe partner:</span>
-              <span className="text-red-600">
-                ¥{Math.abs(finalBalance).toLocaleString()}
-              </span>
-            </>
-          )}
-
-          {finalBalance === 0 && (
-            <>
-              <span>All settled</span>
-              <span className="text-gray-500">
-                ✓
-              </span>
-            </>
-          )}
+          <div className="text-xl font-bold">
+            ¥{sakiPaid.toLocaleString()}
+          </div>
 
         </div>
 
       </div>
 
-      {finalBalance !== 0 && (
 
-        <button
-          onClick={handleSettle}
-          disabled={loading}
-          className="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg"
-        >
-          {loading ? "Settling..." : "Settle Up"}
-        </button>
+      {owedAmount === 0 ? (
+
+        <div className="text-green-600 font-bold">
+          All settled up
+        </div>
+
+      ) : (
+
+        <>
+          <div className="mb-4">
+
+            <div className="font-semibold">
+              {owedBy} owes {owedTo}
+            </div>
+
+            <div className="text-2xl font-bold text-orange-600">
+              ¥{owedAmount.toLocaleString()}
+            </div>
+
+          </div>
+
+
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <CheckCircle size={18} />
+            Settle
+          </button>
+
+        </>
 
       )}
 
-      {/* ============================================
-          SETTLEMENT HISTORY
-      ============================================ */}
 
-      {settlements.length > 0 && (
+      {showModal && (
 
-        <div className="mt-4">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
 
-          <h3 className="text-sm font-semibold mb-2">
-            Settlement History
-          </h3>
+          <div className="bg-white p-6 rounded-lg">
 
-          <div className="space-y-1 text-xs text-gray-600">
+            <div className="mb-4">
+              Confirm settlement?
+            </div>
 
-            {settlements.map(s => (
+            <div className="flex gap-3">
 
-              <div key={s.id} className="flex justify-between">
+              <button
+                onClick={handleSettle}
+                className="bg-green-500 text-white px-4 py-2 rounded"
+              >
+                Confirm
+              </button>
 
-                <span>
-                  {s.paid_by} → {s.paid_to}
-                </span>
+              <button
+                onClick={() => setShowModal(false)}
+                className="bg-gray-300 px-4 py-2 rounded"
+              >
+                Cancel
+              </button>
 
-                <span>
-                  ¥{Number(s.amount).toLocaleString()}
-                </span>
-
-              </div>
-
-            ))}
+            </div>
 
           </div>
 
