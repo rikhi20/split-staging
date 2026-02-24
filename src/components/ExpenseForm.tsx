@@ -1,210 +1,159 @@
-import { useState } from 'react';
-import { PlusCircle } from 'lucide-react';
-import { addExpense, Person } from '../lib/supabase';
+import { useState } from "react";
+import { supabase } from "../lib/supabase";
 
-interface ExpenseFormProps {
+interface Props {
+  groupId: string;
   onExpenseAdded: () => void;
 }
 
-const EXPENSE_TYPES = [
-  'Food & Dining',
-  'Transportation',
-  'Entertainment',
-  'Shopping',
-  'Utilities',
-  'Groceries',
-  'Healthcare',
-  'Other'
-];
+export function ExpenseForm({ groupId, onExpenseAdded }: Props) {
 
-export function ExpenseForm({ onExpenseAdded }: ExpenseFormProps) {
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [splitEqual, setSplitEqual] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  const [expenseType, setExpenseType] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState<Person>('Rikhi');
-  const [description, setDescription] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  //--------------------------------------------------
+  // SUBMIT
+  //--------------------------------------------------
 
-  const handleSubmit = async (e: React.FormEvent) => {
-
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!expenseType || !amount) return;
+    if (!amount || !groupId) return;
+
+    setLoading(true);
 
     try {
+      //--------------------------------------------------
+      // GET CURRENT USER
+      //--------------------------------------------------
 
-      setIsSubmitting(true);
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
 
-      await addExpense(
-        expenseType,
-        parseFloat(amount),
-        paidBy,
-        description
-      );
+      if (!user) throw new Error("Not logged in");
 
-      // reset form
-      setExpenseType('');
-      setAmount('');
-      setDescription('');
-      setPaidBy('Rikhi');
+      //--------------------------------------------------
+      // CREATE EXPENSE
+      //--------------------------------------------------
+
+      const { data: expense, error } = await supabase
+        .from("expenses")
+        .insert({
+          group_id: groupId,
+          paid_by: user.id,
+          amount: Number(amount),
+          description: description || null,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      //--------------------------------------------------
+      // GET GROUP MEMBERS
+      //--------------------------------------------------
+
+      const { data: members } = await supabase
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", groupId);
+
+      if (!members || members.length === 0)
+        throw new Error("No group members");
+
+      //--------------------------------------------------
+      // CREATE SPLITS
+      //--------------------------------------------------
+
+      if (splitEqual) {
+
+        const splitAmount = Number(amount) / members.length;
+
+        const splits = members.map(member => ({
+          expense_id: expense.id,
+          user_id: member.user_id,
+          amount: splitAmount,
+        }));
+
+        const { error: splitError } = await supabase
+          .from("expense_splits")
+          .insert(splits);
+
+        if (splitError) throw splitError;
+      }
+
+      //--------------------------------------------------
+      // RESET
+      //--------------------------------------------------
+
+      setAmount("");
+      setDescription("");
 
       onExpenseAdded();
 
-    } catch (error) {
-
-      console.error(error);
-
-      alert('Failed to add expense');
-
-    } finally {
-
-      setIsSubmitting(false);
-
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add expense");
     }
 
-  };
+    setLoading(false);
+  }
+
+  //--------------------------------------------------
+  // UI
+  //--------------------------------------------------
 
   return (
+    <div className="bg-white p-4 rounded-xl shadow">
 
-    <form
-      onSubmit={handleSubmit}
-      className="bg-white rounded-lg shadow-md p-6 mb-6"
-    >
-
-      <h2 className="text-xl font-semibold mb-4 text-gray-800">
-        Add New Expense
+      <h2 className="font-semibold mb-3">
+        Add Expense
       </h2>
 
+      <form onSubmit={handleSubmit} className="space-y-3">
 
-      <div className="space-y-4">
+        {/* amount */}
+        <input
+          type="number"
+          placeholder="Amount"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          required
+          className="w-full border rounded-lg px-3 py-2"
+        />
 
-        {/* Type */}
+        {/* description */}
+        <input
+          type="text"
+          placeholder="Description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="w-full border rounded-lg px-3 py-2"
+        />
 
-        <div>
-
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Expense Type
-          </label>
-
-          <select
-            value={expenseType}
-            onChange={(e) => setExpenseType(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md"
-            required
-          >
-
-            <option value="">
-              Select type...
-            </option>
-
-            {EXPENSE_TYPES.map(type => (
-
-              <option key={type} value={type}>
-                {type}
-              </option>
-
-            ))}
-
-          </select>
-
-        </div>
-
-
-        {/* Amount */}
-
-        <div>
-
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Amount (¥)
-          </label>
-
+        {/* split toggle */}
+        <label className="flex items-center gap-2 text-sm">
           <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md"
-            required
+            type="checkbox"
+            checked={splitEqual}
+            onChange={(e) => setSplitEqual(e.target.checked)}
           />
+          Split equally
+        </label>
 
-        </div>
-
-
-        {/* Paid By */}
-
-        <div>
-
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Paid By
-          </label>
-
-          <div className="flex gap-3">
-
-            <button
-              type="button"
-              onClick={() => setPaidBy('Rikhi')}
-              className={`flex-1 py-2 rounded-md ${
-                paidBy === 'Rikhi'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100'
-              }`}
-            >
-              Rikhi
-            </button>
-
-
-            <button
-              type="button"
-              onClick={() => setPaidBy('Saki')}
-              className={`flex-1 py-2 rounded-md ${
-                paidBy === 'Saki'
-                  ? 'bg-pink-500 text-white'
-                  : 'bg-gray-100'
-              }`}
-            >
-              Saki
-            </button>
-
-          </div>
-
-        </div>
-
-
-        {/* Description */}
-
-        <div>
-
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Description
-          </label>
-
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md"
-          />
-
-        </div>
-
-
-        {/* Submit */}
-
+        {/* button */}
         <button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full bg-blue-500 text-white py-3 rounded-md"
+          disabled={loading}
+          className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600"
         >
-
-          <PlusCircle size={20} />
-
-          {isSubmitting ? 'Adding...' : 'Add Expense'}
-
+          {loading ? "Adding..." : "Add Expense"}
         </button>
 
-      </div>
+      </form>
 
-    </form>
-
+    </div>
   );
-
 }
